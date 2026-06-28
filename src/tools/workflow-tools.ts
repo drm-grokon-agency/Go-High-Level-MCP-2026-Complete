@@ -34,7 +34,7 @@ export class WorkflowTools {
       // ─── New Workflow Tools ───────────────────────────────────────────────
       {
         name: 'ghl_list_workflows',
-        description: 'List all workflows in a location with status, trigger type, and step counts. Alias for ghl_get_workflows with additional filter options.',
+        description: 'List all workflows in a location with status, trigger type, and step counts. Note: the GHL API does not support pagination or limit on this endpoint — all workflows are always returned.',
         inputSchema: {
           type: 'object',
           properties: {
@@ -46,14 +46,6 @@ export class WorkflowTools {
               type: 'string',
               enum: ['active', 'inactive', 'draft'],
               description: 'Filter workflows by status'
-            },
-            limit: {
-              type: 'number',
-              description: 'Maximum number of workflows to return (default: 50)'
-            },
-            skip: {
-              type: 'number',
-              description: 'Number of records to skip for pagination'
             }
           },
           additionalProperties: false
@@ -287,8 +279,8 @@ export class WorkflowTools {
     const qp = new URLSearchParams();
     if (locationId) qp.append('locationId', locationId);
     if (params.status) qp.append('status', params.status);
-    if (params.limit) qp.append('limit', String(params.limit));
-    if (params.skip) qp.append('skip', String(params.skip));
+    // NOTE: limit and skip are intentionally omitted — the GHL /workflows/ endpoint
+    // returns a 422 error if these parameters are present.
     const qs = qp.toString();
     return (this.apiClient as any).makeRequest('GET', `/workflows/${qs ? `?${qs}` : ''}`);
   }
@@ -349,4 +341,4 @@ export function isWorkflowTool(toolName: string): boolean {
   ];
   
   return workflowToolNames.includes(toolName);
-} 
+}

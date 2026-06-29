@@ -296,8 +296,9 @@ export class UsersTools {
     switch (toolName) {
       case 'get_users': {
         const params = new URLSearchParams();
+        const companyId = (args.companyId as string) || process.env.GHL_COMPANY_ID || '';
         params.append('locationId', locationId);
-        if (args.companyId) params.append('companyId', String(args.companyId));
+        if (companyId) params.append('companyId', companyId);
         if (args.query) params.append('query', String(args.query));
         if (args.skip) params.append('skip', String(args.skip));
         if (args.limit) params.append('limit', String(args.limit));
@@ -358,7 +359,8 @@ export class UsersTools {
 
       case 'search_users': {
         const params = new URLSearchParams();
-        if (args.companyId) params.append('companyId', String(args.companyId));
+        const companyId = (args.companyId as string) || process.env.GHL_COMPANY_ID || '';
+        if (companyId) params.append('companyId', companyId);
         if (args.query) params.append('query', String(args.query));
         if (args.skip) params.append('skip', String(args.skip));
         if (args.limit) params.append('limit', String(args.limit));
@@ -374,8 +376,9 @@ export class UsersTools {
             : args.email
               ? [String(args.email)]
               : [];
+        const companyId = (args.companyId as string) || process.env.GHL_COMPANY_ID || '';
         const body: Record<string, unknown> = {
-          companyId: args.companyId,
+          companyId: companyId || undefined,
           deleted: args.deleted ?? false,
           emails
         };
@@ -388,3 +391,5 @@ export class UsersTools {
     }
   }
 }
+
+

@@ -205,7 +205,7 @@ export class WorkflowTools {
     const qs = locationId ? `?locationId=${encodeURIComponent(locationId)}` : '';
     const response = await (this.apiClient as any).makeRequest('GET', `/workflows/${qs}`);
 
-    let workflows: any[] = response?.workflows || [];
+    let workflows: any[] = response?.data?.workflows || response?.workflows || [];
     const totalInLocation = workflows.length;
 
     // Client-side status filter
@@ -280,3 +280,4 @@ export function isWorkflowTool(toolName: string): boolean {
     'ghl_get_workflow_executions',
   ].includes(toolName);
 }
+

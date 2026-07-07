@@ -1353,19 +1353,18 @@ export class GHLApiClient {
 
   /**
    * Bulk update contact tags
-   * POST /contacts/tags/bulk
+   * POST /contacts/bulk/tags/update/{type}
    */
   async bulkUpdateContactTags(contactIds: string[], tags: string[], operation: 'add' | 'remove', removeAllTags?: boolean): Promise<GHLApiResponse<GHLBulkTagsResponse>> {
     try {
       const payload = {
-        ids: contactIds,
-        tags,
-        operation,
-        ...(removeAllTags !== undefined && { removeAllTags })
+        locationId: this.config.locationId,
+        contacts: contactIds,
+        tags
       };
 
       const response: AxiosResponse<GHLBulkTagsResponse> = await this.axiosInstance.post(
-        '/contacts/tags/bulk',
+        `/contacts/bulk/tags/update/${operation}`,
         payload
       );
 

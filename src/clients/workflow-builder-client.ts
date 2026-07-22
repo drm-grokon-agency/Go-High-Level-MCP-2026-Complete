@@ -75,6 +75,15 @@ export interface WorkflowBuilderConfig {
 
 // ─── Client ─────────────────────────────────────────────────
 
+export interface ContactAutomationRun {
+  workflowId: string;
+  workflowName: string;
+  status: string;
+  startedAt: string | null;
+  lastStep: string | null;
+  stepCount: number;
+}
+
 export class WorkflowBuilderClient {
   private config: WorkflowBuilderConfig;
   private cachedIdToken: string | null = null;
@@ -541,5 +550,70 @@ export class WorkflowBuilderClient {
    */
   getUserId(): string {
     return this.config.userId;
+  }
+
+  /**
+   * GROMAAP: Contact automation history. Fans out over the location's workflows and queries the
+   * internal execution-log endpoint (backend.leadconnectorhq.com/workflows/logs/v2) with the
+   * contactId server-side filter, then groups per-step rows into one summary per workflow.
+   * Endpoint, contactId filter, and row shape verified live 2026-07.
+   */
+  async getContactAutomationHistory(
+    contactId: string,
+    opts: { locationId?: string; lookbackDays?: number; concurrency?: number; maxWorkflows?: number } = {}
+  ): Promise<{ runs: ContactAutomationRun[]; scanned: number; errored: number }> {
+    const loc = opts.locationId ?? this.config.locationId;
+    const headers = { ...(await this.getHeaders()), 'source': 'WEB_USER' };
+    const toMs = Date.now();
+    const fromMs = toMs - (opts.lookbackDays ?? 365) * 86400000;
+    const conc = opts.concurrency ?? 5;
+    const LOGS = 'https://backend.leadconnectorhq.com/workflows/logs/v2';
+
+    const listed = await this.listWorkflows({ limit: 500 });
+    const capped = listed.rows.slice(0, opts.maxWorkflows ?? 1000);
+    const nameById = new Map(capped.map(w => [w._id, w.name]));
+
+    const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+    const fetchLogs = async (workflowId: string): Promise<{ rows: any[]; error?: number }> => {
+      const url = `${LOGS}?locationId=${loc}&workflowId=${workflowId}&contactId=${contactId}`
+        + `&limit=100&action=first&dateType=custom&fromDate=${fromMs}&toDate=${toMs}`;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const res = await fetch(url, { headers });
+        if (res.status === 429) { await sleep(500 * (attempt + 1)); continue; }
+        if (res.status === 500) return { rows: [], error: 500 };
+        if (!res.ok) return { rows: [], error: res.status };
+        return { rows: (await res.json()) as any[] };
+      }
+      return { rows: [], error: 429 };
+    };
+
+    const runs: ContactAutomationRun[] = [];
+    let errored = 0;
+    for (let i = 0; i < capped.length; i += conc) {
+      const batch = capped.slice(i, i + conc);
+      const results = await Promise.all(batch.map(w => fetchLogs(w._id)));
+      for (const r of results) {
+        if (r.error) { errored++; continue; }
+        if (!r.rows.length) continue;
+        const sorted = [...r.rows].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+        const wfId = sorted[0].workflowId as string;
+        const last = sorted[sorted.length - 1];
+        const status = sorted.some(x => x.nextExecutionAt)
+          ? 'active'
+          : (last.type === 'remove_from_workflow' || last.status === 'finished')
+            ? 'completed'
+            : (last.status ?? 'unknown');
+        runs.push({
+          workflowId: wfId,
+          workflowName: nameById.get(wfId) ?? wfId,
+          status,
+          startedAt: sorted[0].timestamp ?? sorted[0].createdAt ?? null,
+          lastStep: last.stepName ?? null,
+          stepCount: sorted.length,
+        });
+      }
+    }
+    runs.sort((a, b) => (Date.parse(b.startedAt ?? '') || 0) - (Date.parse(a.startedAt ?? '') || 0));
+    return { runs, scanned: capped.length, errored };
   }
 }

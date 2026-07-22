@@ -41,3 +41,48 @@ what was **hanging the entire MCP server** on that call.
   nonexistent one.
 - Add a timeout / fail-fast on the trigger write so a `500`/`NOT_FOUND` cannot hang the
   server - this addresses the `create_workflow` hang independently of the create fix.
+
+---
+
+## `ghl_get_workflow_executions` calls a route that does not exist on the public API
+
+**Recorded:** 2026-07-21
+**Status:** Open - not fixed.
+**Where:** `getWorkflowExecutions` in `src/tools/workflow-tools.ts`.
+
+**Observed behavior (runtime):**
+The handler issues `GET /workflows/{workflowId}/executions` against the public API host
+(`services.leadconnectorhq.com`, via `makeRequest`). That path returns HTTP `404` with the
+Express route-missing body (`"Cannot GET /workflows/.../executions"`). The route does not
+exist on the public API, so the tool can never return execution/enrollment data. Its
+`contactId` / `status` / `startDate` / `endDate` parameters are an untested input schema,
+not a working server-side filter.
+
+**Impact:** Any feature built on this primitive (e.g. a per-contact automation-history
+fan-out) cannot work as written - it would loop a call that 404s.
+
+**Evidence:**
+- Runtime: `GET services.leadconnectorhq.com/workflows/{wf}/executions?locationId=...` ->
+  `404 {"message":"Cannot GET /workflows/.../executions...","error":"Not Found","statusCode":404}`
+  (probed live with a valid PIT + `Version: 2023-02-21`, location `KWEEmHNX0lTGtgifAALH`).
+- Runtime: six sibling public paths also `404` route-missing: `/contacts/{id}/workflows`,
+  `/contacts/{id}/workflow`, `/workflows/{wf}/enrollments`, `/workflows/{wf}/enrollment-history`,
+  `/workflows/{wf}/contacts`, `/workflows/executions`.
+- Runtime: the internal definition service `backend.leadconnectorhq.com/workflow` authenticates
+  (minted Firebase id_token + `Bearer {PIT}` + `token-id`) and serves `/{loc}/list`,
+  `/{loc}/{wf}`, `/{loc}/{wf}/history` (200), but returns `404 {"msg":"Not found"}` for
+  `/{loc}/{wf}/executions|enrollments|stats|contacts` - execution/enrollment data is not on
+  that service either.
+- Source: `getWorkflowExecutions` builds the path via the public `makeRequest` (confirmed by inspection).
+
+**Not yet located:** the endpoint that actually serves per-contact enrollment/execution
+history. It exists (the workflow builder "Execution logs" / "Enrollment history" tabs render
+it) but its address has not been captured - the builder is a cross-origin iframe and its XHR
+was not observable via available tooling. Next step: capture that request from the browser
+DevTools Network panel.
+
+**Fix direction (unverified):**
+- Repoint `getWorkflowExecutions` at the real endpoint once its host/path is captured, reusing
+  the internal auth already proven for `backend.leadconnectorhq.com` (mint Firebase id_token;
+  send `Bearer {PIT}` + `token-id`).
+- Until then, treat the tool as non-functional so callers do not mistake its schema for a working filter.

@@ -159,6 +159,25 @@ export class WorkflowBuilderTools {
         _meta: { labels: { category: 'workflows', access: 'read', complexity: 'simple' } },
       } as Tool,
 
+      {
+        name: 'get_contact_automation_history',
+        description:
+          'GROMAAP: Return every workflow a contact has run through, grouped from the internal ' +
+          'execution logs (workflowName, status, startedAt, lastStep, stepCount). Fans out over the ' +
+          "location's workflows and filters by contactId server-side.",
+        inputSchema: {
+          type: 'object',
+          properties: {
+            contactId: { type: 'string', description: 'The contact ID to look up automation history for' },
+            locationId: { type: 'string', description: 'Location ID (defaults to the configured location)' },
+            lookbackDays: { type: 'number', description: 'How many days back to search (default 365)' },
+          },
+          required: ['contactId'],
+          additionalProperties: false,
+        },
+        _meta: { labels: { category: 'workflows', access: 'read', complexity: 'moderate' } },
+      } as Tool,
+
       // ─── UPDATE ACTIONS ─────────────────────────────────
       {
         name: 'ghl_update_workflow_actions',
@@ -307,6 +326,8 @@ export class WorkflowBuilderTools {
         case 'ghl_list_workflows_full':
           return await this.listWorkflowsFull(params);
         case 'ghl_get_workflow_full':
+        case 'get_contact_automation_history':
+          return await this.getContactAutomationHistory(params);
           return await this.getWorkflowFull(params);
         case 'ghl_update_workflow_actions':
           return await this.updateWorkflowActions(params);
@@ -410,6 +431,22 @@ export class WorkflowBuilderTools {
       url: `https://app.gohighlevel.com/v2/location/${this.client!.getLocationId()}/automation/workflow/${workflow._id}`,
     });
   }
+  private async getContactAutomationHistory(params: Record<string, unknown>): Promise<ToolResult> {
+    const contactId = params.contactId as string;
+    if (!contactId) return error('contactId is required');
+    const result = await this.client!.getContactAutomationHistory(contactId, {
+      locationId: params.locationId as string | undefined,
+      lookbackDays: params.lookbackDays as number | undefined,
+    });
+    return success({
+      contactId,
+      workflowsScanned: result.scanned,
+      workflowsErrored: result.errored,
+      automationRuns: result.runs,
+      note: 'GROMAAP: every workflow this contact has run through (grouped from internal execution logs).',
+    });
+  }
+
 
   private async updateWorkflowActions(params: Record<string, unknown>): Promise<ToolResult> {
     const workflowId = params.workflowId as string;
@@ -498,5 +535,6 @@ export function isWorkflowBuilderTool(toolName: string): boolean {
     'ghl_delete_workflow',
     'ghl_publish_workflow',
     'ghl_clone_workflow',
+    'get_contact_automation_history',
   ].includes(toolName);
 }
